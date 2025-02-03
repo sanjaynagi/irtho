@@ -1,0 +1,19 @@
+[project]
+authors = ["Sanjay C Nagi <sanjay.c.nagi@gmail.com>"]
+channels = ["conda-forge", "bioconda"]
+description = "A tool for locating orthologous loci for insecticide resistance"
+name = "irtho"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+python = ">=3.10,<3.13"
+pandas = ">=2.2.3,<3"
+plotly = ">=5.24.1,<6"
+numpy = ">=2.0.2,<3"
+scikit-allel = ">=1.3.13,<2"
+orthofinder = ">=2.5.5,<3"
+ipykernel = ">=6.29.5,<7"
+pip = ">=24.3.1,<25"
