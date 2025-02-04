@@ -1,6 +1,58 @@
 import os
 from Bio import SeqIO
 import pandas as pd
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG, 
+                   format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+def get_tqdm():
+    """
+    Return the appropriate tqdm version depending on the environment.
+    
+    In a Jupyter Notebook (IPython with ZMQInteractiveShell) this returns 
+    tqdm.notebook.tqdm; otherwise, it returns the standard tqdm.tqdm.
+    
+    Returns:
+        The tqdm function.
+    """
+    try:
+        from IPython import get_ipython
+        shell = get_ipython().__class__.__name__
+        if shell == 'ZMQInteractiveShell':
+            # likely running in a Jupyter notebook or qtconsole
+            from tqdm.notebook import tqdm
+        else:
+            # likely running in a terminal or other interface
+            from tqdm import tqdm
+    except (ImportError, NameError):
+        # Fallback to the default CLI version if IPython is not available.
+        from tqdm import tqdm
+
+    return tqdm
+
+def split_one_to_many_orthologs(targets_df, target_genome):
+    # split one to many ortholog targets 
+    """
+    Split a column with one-to-many ortholog targets into individual rows for each possible ortholog.
+    
+    Args:
+        targets_df (pd.DataFrame): DataFrame containing a column of target genes.
+        target_genome (str): The name of the column to split.
+    
+    Returns:
+        pd.DataFrame: A DataFrame with the same columns as the original,
+            but with the one to many orthologs split into individual rows.
+    """
+    split_targets_df = targets_df.copy()
+    split_targets_df[target_genome] = split_targets_df[target_genome].str.split(',')
+    split_targets_df = split_targets_df.explode(target_genome).reset_index(drop=True)
+    split_targets_df[target_genome] = split_targets_df[target_genome].str.replace(" ", "")
+    
+    return split_targets_df
+
 
 def load_fasta(fasta_path, debug=False):
     """
@@ -24,61 +76,90 @@ def load_fasta(fasta_path, debug=False):
     
     return sequences
 
-def create_gene_mapping(file_path):
+import pandas as pd
+
+def parse_attributes(attr_string):
+    """Parse GFF attribute string into dictionary."""
+    attributes = {}
+    for attr in attr_string.split(';'):
+        if '=' in attr:
+            key, value = attr.split('=', 1)
+            attributes[key] = value
+    return attributes
+
+def create_gene_mapping(gff_file):
     """
-    Parse a GFF file and create a mapping from genes to transcripts to proteins.
+    Create a pandas DataFrame mapping genes to their transcripts and proteins.
+    Handles both VectorBase and RefSeq GFF formats.
     
     Args:
-        file_path (str): Path to the GFF file.
-    
+        gff_file (str): Path to the GFF file
+        
     Returns:
-        pd.DataFrame: A DataFrame with columns ['gene_id', 'transcript_id', 'protein_id'].
+        pandas.DataFrame: DataFrame with columns for gene_id, transcript_id, and protein_id
     """
-    mappings = []
-    with open(file_path, 'r') as file:
-        gene_id = None
-        transcript_id = None
-
-        for line in file:
-            # Skip comments and empty lines
-            if line.startswith("#") or not line.strip():
+    gene_transcript_protein_map = []
+    seen = set()  # To track unique combinations
+    
+    with open(gff_file) as f:
+        for line in f:
+            if line.startswith('#'):
                 continue
-
-            # Split the line into columns
-            columns = line.strip().split("\t")
-            if len(columns) < 9:
-                continue  # Skip malformed lines
-
-            feature_type = columns[2]  # The third column indicates the feature type
-            attributes = columns[8]  # The ninth column contains the attributes
-
-            # Parse the attributes into a dictionary
-            attr_dict = {}
-            for attr in attributes.split(";"):
-                if "=" in attr:
-                    key, value = attr.split("=", 1)
-                    attr_dict[key.strip()] = value.strip()
-
-            # Extract gene_id and transcript_id from mRNA or transcript rows
-            if feature_type in {"mRNA", "transcript"}:
-                transcript_id = attr_dict.get("ID")
-                gene_id = attr_dict.get("Parent")
-
-            # Extract protein_id from CDS rows
-            elif feature_type == "CDS":
-                protein_id = attr_dict.get("protein_source_id") or attr_dict.get("protein_id")
-                if gene_id and transcript_id and protein_id:
-                    mappings.append((gene_id, transcript_id, protein_id))
-
-    # Create a DataFrame from the mappings
-    df = pd.DataFrame(mappings, columns=["gene_id", "transcript_id", "protein_id"])
-    df.loc[:, 'gene_id'] = df.gene_id.str.replace("gene-", "")
-    df.loc[:, 'transcript_id'] = df.transcript_id.str.replace("rna-", "")
-    return df.drop_duplicates().reset_index(drop=True)
+                
+            fields = line.strip().split('\t')
+            if len(fields) < 9 or fields[2] != 'CDS':
+                continue
+            
+            source = fields[1]
+            attributes = parse_attributes(fields[8])
+            
+            # Handle VectorBase format
+            if source == 'VEuPathDB':
+                gene_id = attributes.get('gene_id')
+                transcript_id = attributes.get('Parent')
+                protein_id = attributes.get('protein_source_id')
+                
+            # Handle RefSeq format - only process if source is RefSeq
+            elif source == 'RefSeq':
+                gene_id = attributes.get('gene')  # LOC ID
+                transcript_id = attributes.get('Parent')
+                if transcript_id and transcript_id.startswith('rna-'):
+                    transcript_id = transcript_id[4:]  # Remove 'rna-' prefix
+                protein_id = attributes.get('protein_id')
+                if protein_id and protein_id.startswith('cds-'):
+                    protein_id = protein_id[4:]  # Remove 'cds-' prefix
+                    
+            else:
+                continue  # Skip all other sources
+                
+            # Skip if any required field is missing
+            if not all([gene_id, transcript_id, protein_id]):
+                continue
+                
+            # Create tuple of the mapping
+            mapping = (gene_id, transcript_id, protein_id)
+            
+            # Only add if we haven't seen this combination before
+            if mapping not in seen:
+                gene_transcript_protein_map.append({
+                    'gene_id': gene_id,
+                    'transcript_id': transcript_id,
+                    'protein_id': protein_id
+                })
+                seen.add(mapping)
+    
+    # Convert to DataFrame
+    df = pd.DataFrame(gene_transcript_protein_map)
+    
+    # Sort by gene_id to maintain consistent order
+    df = df.sort_values('gene_id').reset_index(drop=True)
+    
+    return df
     
 def get_longest_transcripts(sequences, mapping_df, debug=False):
     """
-    Find the longest transcript for each gene using the mapping DataFrame.
+    Find the longest transcript for each gene using the mapping DataFrame and return
+    sequences keyed by gene ID.
 
     Args:
         sequences: Dictionary of protein sequences keyed by protein ID.
@@ -86,7 +167,7 @@ def get_longest_transcripts(sequences, mapping_df, debug=False):
         debug: Whether to print debug information.
 
     Returns:
-        A dictionary of longest transcripts keyed by gene ID.
+        A dictionary of longest protein sequences keyed by gene ID.
     """
     # Filter the mapping DataFrame to include only rows where the protein_id exists in the sequences
     mapping_df = mapping_df[mapping_df["protein_id"].isin(sequences.keys())]
@@ -109,7 +190,7 @@ def get_longest_transcripts(sequences, mapping_df, debug=False):
     for gene_id, transcript_records in gene_transcripts.items():
         # Map protein IDs to sequences and find the longest
         valid_transcripts = [
-            (record["transcript_id"], record["protein_id"], sequences[record["protein_id"]])
+            (record["protein_id"], sequences[record["protein_id"]])
             for record in transcript_records
             if record["protein_id"] in sequences
         ]
@@ -120,16 +201,17 @@ def get_longest_transcripts(sequences, mapping_df, debug=False):
             continue
 
         # Find the longest transcript
-        longest = max(valid_transcripts, key=lambda x: len(x[2]))
-        longest_transcripts[gene_id] = (longest[0], longest[2])  # (transcript_id, sequence)
+        longest = max(valid_transcripts, key=lambda x: len(x[1]))
+        longest_transcripts[gene_id] = longest[1]  # Store the sequence keyed by gene_id
 
         if debug and len(valid_transcripts) > 1:
-            lengths = [(t[0], len(t[2])) for t in valid_transcripts]
+            lengths = [(t[0], len(t[1])) for t in valid_transcripts]
             print(f"\nGene {gene_id} transcripts:")
-            for tid, length in lengths:
-                print(f"  {tid}: {length} aa{'*' if tid == longest[0] else ''}")
+            for pid, length in lengths:
+                print(f"  {pid}: {length} aa{'*' if pid == longest[0] else ''}")
 
     return longest_transcripts
+
 
 def write_fasta(sequences, output_path, debug=False):
     """
@@ -141,14 +223,15 @@ def write_fasta(sequences, output_path, debug=False):
         debug: Whether to print debug information.
     """
     with open(output_path, 'w') as f:
-        for gene_id, (transcript_id, sequence) in sequences.items():
-            f.write(f">{transcript_id}\n")
-            for i in range(0, len(sequence), 60):
+        for gene_id, sequence in sequences.items():
+            f.write(f">{gene_id}\n")  # Use gene_id as the FASTA header
+            for i in range(0, len(sequence), 60):  # Wrap lines at 60 characters
                 f.write(f"{sequence[i:i+60]}\n")
     
     if debug:
         print(f"Wrote {len(sequences)} sequences to {output_path}")
-        print(f"Total residues written: {sum(len(seq[1]) for seq in sequences.values())}")
+        print(f"Total residues written: {sum(len(seq) for seq in sequences.values())}")
+
 
 def write_longest_isoforms(genome, debug=False, path_to_references="../resources/reference"):
     """
@@ -180,10 +263,95 @@ def write_longest_isoforms(genome, debug=False, path_to_references="../resources
     df_mapping = create_gene_mapping(gff_path)
 
     # Step 3: Identify the longest isoforms for each gene
-    longest_transcripts = get_longest_transcripts(sequences, df_mapping, debug=debug)
+    longest_transcripts = get_longest_transcripts(sequences, df_mapping, debug=False)
 
     # Step 4: Write the longest isoforms to a new FASTA file
     write_fasta(longest_transcripts, output_fasta_path, debug=debug)
 
     if debug:
         print(f"Longest isoforms written to: {output_fasta_path}")
+
+
+
+from Bio import SeqIO
+import pandas as pd
+
+def extract_protein_sequences(ref_transcript_id, target_gene_id, 
+                          ref_gene_map, target_gene_map,
+                          ref_sequences, target_sequences,
+                          debug=False):
+    """
+    Extract amino acid sequences for a reference transcript and the longest protein 
+    sequence from its orthologous target gene.
+    
+    Args:
+        ref_transcript_id (str): Transcript ID from reference genome
+        target_gene_id (str): Gene ID from target genome (found through orthology)
+        ref_gene_map (pd.DataFrame): Gene mapping DataFrame for reference genome
+        target_gene_map (pd.DataFrame): Gene mapping DataFrame for target genome
+        ref_sequences (dict): Dictionary of reference protein sequences
+        target_sequences (dict): Dictionary of target protein sequences
+        debug (bool): Whether to print debug information
+        
+    Returns:
+        tuple: (ref_sequence, target_sequence, target_protein_id)
+            - ref_sequence: The amino acid sequence for the reference transcript
+            - target_sequence: The longest protein sequence for the target gene
+            - target_protein_id: The ID of the longest target protein sequence
+    """
+    # Get reference protein ID from transcript ID
+    ref_protein_id = ref_gene_map[
+        ref_gene_map['transcript_id'] == ref_transcript_id
+    ]['protein_id'].iloc[0]
+    
+    # Get all target protein IDs for the target gene
+    target_protein_ids = target_gene_map[
+        target_gene_map['gene_id'] == target_gene_id
+    ]['protein_id'].tolist()
+    
+    if debug:
+        print(f"Reference protein ID: {ref_protein_id}")
+        print(f"Target protein IDs: {target_protein_ids}")
+    
+    # Extract reference sequence
+    ref_sequence = ref_sequences.get(ref_protein_id)
+    if ref_sequence is None:
+        raise KeyError(f"Reference protein {ref_protein_id} not found in sequences")
+        
+    # Find the longest target protein sequence
+    longest_target_seq = ""
+    longest_target_id = None
+    for protein_id in target_protein_ids:
+        if protein_id in target_sequences:
+            seq = target_sequences[protein_id]
+            if len(seq) > len(longest_target_seq):
+                longest_target_seq = seq
+                longest_target_id = protein_id
+    
+    if not longest_target_seq:
+        raise KeyError(f"No target proteins found in sequences for gene {target_gene_id}")
+        
+    if debug:
+        print(f"Selected longest target protein: {longest_target_id} "
+              f"(length: {len(longest_target_seq)})")
+        
+    return ref_sequence, longest_target_seq, longest_target_id
+
+
+def load_genome_data(genome_dir, genome_name):
+    """Load protein sequences and create gene mapping for a genome."""
+    logger.info(f"Loading genome data for {genome_name}")
+    
+    protein_path = os.path.join(genome_dir, f"{genome_name}_AnnotatedProteins.fasta")
+    logger.debug(f"Reading protein sequences from {protein_path}")
+    
+    proteins = SeqIO.to_dict(SeqIO.parse(protein_path, "fasta"))
+    protein_seqs = {k: str(v.seq) for k, v in proteins.items()}
+    logger.debug(f"Loaded {len(protein_seqs)} protein sequences")
+    
+    gff_path = os.path.join(genome_dir, f"{genome_name}.gff")
+    logger.debug(f"Reading GFF from {gff_path}")
+    gene_map = create_gene_mapping(str(gff_path))
+    logger.debug(f"Created gene mapping with {len(gene_map)} entries")
+    
+    return protein_seqs, gene_map
