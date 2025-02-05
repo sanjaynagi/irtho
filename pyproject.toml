@@ -1,22 +1,25 @@
 [build-system]
-requires = ["setuptools>=42", "wheel"]
+requires = ["setuptools>=61.2", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "irtho"
-version = "0.1.0"
+version = "0.1.1"
 description = "A tool for locating orthologous loci for insecticide resistance"
-requires-python = ">=3.10, <3.13"
+requires-python = ">=3.9, <3.13"
 authors = [
   {name = "Sanjay C Nagi", email = "sanjay.c.nagi@gmail.com"}
 ]
-dependencies = [
-  "pandas>=2.2.3,<3",
-  "plotly>=5.24.1,<6",
-  "numpy>=2.0.2,<3",
-  "ipykernel>=6.29.5,<7",
-  "pip>=24.3.1,<25"
-]
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.13"
+numpy = "*"
+pandas = "*"
+ipykernel = "*"
+biopython = "*"
+
+[tool.poetry.extras]
+dev = ["jupyterlab"]
 
 [tool.setuptools.packages.find]
 where = ["."]
