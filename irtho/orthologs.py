@@ -113,6 +113,17 @@ class Orthologs:
         if self.debug:
             print(f"Found {len(one_to_many)} one-to-many orthologs.")
 
+
+        # Identify many-to-one orthologs
+        many_to_one = orthologs_df[
+            (orthologs_df[species_a].str.contains(","))  # Multiple genes in species_a
+            & (orthologs_df[species_b].str.contains(",") == False)  # Single gene in species_b
+        ].copy()
+        many_to_one["ortholog_type"] = "many-to-one"
+
+        if self.debug:
+            print(f"Found {len(many_to_one)} many-to-one orthologs.")
+
         # Identify many-to-many orthologs
         many_to_many = orthologs_df[
             (orthologs_df[species_a].str.contains(","))  # Multiple genes in species_a
@@ -124,7 +135,7 @@ class Orthologs:
             print(f"Found {len(many_to_many)} many-to-many orthologs.")
 
         # Combine all ortholog types into a single DataFrame
-        all_orthologs = pd.concat([one_to_one, one_to_many, many_to_many], ignore_index=True)
+        all_orthologs = pd.concat([one_to_one, one_to_many, many_to_one, many_to_many], ignore_index=True)
 
         if self.debug:
             print(f"Total orthologs retrieved: {len(all_orthologs)}")
@@ -302,9 +313,9 @@ class Orthologs:
         
         # Process each row
         mapped_count = 0
-        for idx, row in targets_df.iterrows():
+        for idx, row in tqdm(targets_df.iterrows()):
             logger.debug(f"Processing row {idx}")
-            result = self.locate_orthologous_targets(
+            result = self.find_orthologous_target(
                 ref_transcript_id=row[transcript_col],
                 target_ortholog_id=row[target_genome],
                 codon_num=row[codon_col],
