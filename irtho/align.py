@@ -49,10 +49,11 @@ def map_codon_position(ref_codon_num, alignment_str, window_size=10):
     target_chunks = []
     
     for line in lines:
-        if line.startswith('query'):
-            query_chunks.append(line.split(None, 2)[2])
-        elif line.startswith('target'):
-            target_chunks.append(line.split(None, 2)[2])
+        if len(line.split(None, 2)) == 3:
+            if line.startswith('query'):
+                query_chunks.append(line.split(None, 2)[2])
+            elif line.startswith('target'):
+                target_chunks.append(line.split(None, 2)[2])
             
     # Join the chunks
     query_seq = ''.join(query_chunks)   # Reference sequence
