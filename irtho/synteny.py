@@ -1,6 +1,10 @@
 import os
 import pandas as pd
 
+from .utils import get_tqdm
+
+tqdm = get_tqdm()
+
 def evaluate_synteny(ref_gene, target_gene, ref_gff, target_gff, orthologs_df, target_species, window_size=5, n_required_orthologs=3):
     """
     Evaluate if two genes are in syntenic regions by checking orthology of neighboring genes.
@@ -112,7 +116,7 @@ def add_synteny_information(targets_df, reference_dir, reference_species, target
     orthologs_df = ortho_obj.get_orthologs(reference_species, target_species)
     
     # Evaluate synteny for each row
-    for idx, row in result_df.iterrows():
+    for idx, row in tqdm(result_df.iterrows()):
         if pd.notna(row['gene']) and pd.notna(row[target_species]):
             is_syntenic, shared_count = evaluate_synteny(
                 ref_gene=row['gene'],
