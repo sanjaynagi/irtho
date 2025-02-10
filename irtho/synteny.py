@@ -103,12 +103,12 @@ def add_synteny_information(targets_df, reference_dir, reference_species, target
 
     # Filter GFFs based on source
     if 'RefSeq' in ref_gff_df['source'].unique():
-        ref_genes_df = ref_gff_df.query("type == 'gene' and source == 'RefSeq'")
+        ref_genes_df = ref_gff_df.query("type == 'gene'")
     else:
         ref_genes_df = ref_gff_df.query("type == 'protein_coding_gene'")
         
     if 'RefSeq' in target_gff_df['source'].unique():
-        target_genes_df = target_gff_df.query("type == 'gene' and source == 'RefSeq'")
+        target_genes_df = target_gff_df.query("type == 'gene'")
     else:
         target_genes_df = target_gff_df.query("type == 'protein_coding_gene'")
     
