@@ -355,3 +355,84 @@ def load_genome_data(genome_dir, genome_name):
     logger.debug(f"Created gene mapping with {len(gene_map)} entries")
     
     return protein_seqs, gene_map
+
+
+
+def get_random_exon_positions(gff_path, gene_id, n_positions=1):
+    """
+    Get random positions within exons for a given gene from a GFF file.
+    
+    Args:
+        gff_path (str): Path to the GFF file
+        gene_id (str): Gene ID to find exons for
+        n_positions (int): Number of random positions to return
+        
+    Returns:
+        list: List of tuples containing (contig, start, end, strand) for each random position
+    """
+    import random
+    
+    # Convert gene_id to string and handle NaN
+    if pd.isna(gene_id):
+        return []
+    gene_id = str(gene_id)
+    
+    # Store exon information
+    exons = []
+    
+    # Get transcript IDs for this gene using existing function
+    gene_map_df = create_gene_mapping(gff_path)
+    transcripts = gene_map_df[gene_map_df['gene_id'] == gene_id]['transcript_id'].tolist()
+    
+    if not transcripts:
+        print(f"Warning: No transcripts found for gene {gene_id}")
+        return []
+    
+    # Find exons for these transcripts
+    with open(gff_path) as f:
+        for line in f:
+            if line.startswith('#'):
+                continue
+                
+            fields = line.strip().split('\t')
+            if len(fields) < 9:
+                continue
+                
+            if fields[2] == 'exon':
+                attributes = dict(x.split('=') for x in fields[8].split(';') if '=' in x)
+                if 'Parent' in attributes and any(t in attributes['Parent'] for t in transcripts):
+                    exons.append({
+                        'contig': fields[0],
+                        'start': int(fields[3]),
+                        'end': int(fields[4]),
+                        'strand': fields[6]
+                    })
+    
+    if not exons:
+        print(f"Warning: No exons found for gene {gene_id}")
+        return []
+    
+    # Remove duplicate exons (same coordinates)
+    unique_exons = []
+    seen = set()
+    for exon in exons:
+        key = (exon['contig'], exon['start'], exon['end'], exon['strand'])
+        if key not in seen:
+            seen.add(key)
+            unique_exons.append(exon)
+    
+    # Generate random positions
+    positions = []
+    for i in range(n_positions):
+        # Randomly select an exon
+        exon = random.choice(unique_exons)
+        # Generate a random position within the exon
+        pos = random.randint(exon['start'], exon['end'])
+        positions.append((
+            exon['contig'],
+            pos,
+            pos + 1,  # For consistency with other position formats
+            exon['strand']
+        ))
+    
+    return positions

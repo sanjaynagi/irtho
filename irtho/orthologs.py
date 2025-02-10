@@ -1,7 +1,13 @@
 import os
 import pandas as pd
 
-from  .utils  import get_tqdm, extract_protein_sequences, load_genome_data
+from  .utils  import (
+    get_tqdm, 
+    extract_protein_sequences,
+    load_genome_data,
+    get_random_exon_positions
+)
+
 from .align import logger, align_protein_sequences, get_genomic_position_from_codon, map_codon_position
 
 tqdm = get_tqdm()
@@ -236,15 +242,15 @@ class Orthologs:
         
         result = {
             'target_codon': None,
-            'target_chrom': None,
+            'target_contig': None,
             'target_start': None,
             'target_end': None,
             'target_strand': None
         }
         
         # Check for required inputs
-        if pd.isna(codon_num) or pd.isna(target_ortholog_id):
-            logger.warning("Missing required input - skipping")
+        if pd.isna(codon_num) or pd.isna(target_ortholog_id) or "random" in str(codon_num):
+            logger.warning("Missing codon or ortholog info - skipping")
             return result
             
         # Get protein sequences
@@ -271,7 +277,7 @@ class Orthologs:
         if target_codon is not None:
             # Get genomic coordinates
             logger.debug("Getting genomic coordinates")
-            chrom, start, end, strand = get_genomic_position_from_codon(
+            contig, start, end, strand = get_genomic_position_from_codon(
                 target_codon,
                 target_gff_path,
                 target_id,
@@ -280,12 +286,12 @@ class Orthologs:
             
             result.update({
                 'target_codon': target_codon,
-                'target_chrom': chrom,
+                'target_contig': contig,
                 'target_start': start,
                 'target_end': end,
                 'target_strand': strand
             })
-            logger.info(f"Found target location: {chrom}:{start}-{end} ({strand})")
+            logger.info(f"Found target location: {contig}:{start}-{end} ({strand})")
         else:
             logger.warning("Could not map codon position")
         
@@ -308,7 +314,7 @@ class Orthologs:
         logger.debug(f"Target GFF path: {target_gff}")
         
         # Add target columns
-        for col in ['target_codon', 'target_chrom', 'target_start', 'target_end', 'target_strand']:
+        for col in ['target_codon', 'target_contig', 'target_start', 'target_end', 'target_strand']:
             targets_df[col] = None
         
         # Process each row
@@ -335,12 +341,76 @@ class Orthologs:
         
         logger.info(f"Mapping complete. Successfully mapped {mapped_count}/{len(targets_df)} sites")
         return targets_df
-
-
-
-
-
-
+    
+    def process_random_targets(self, targets_df, reference_dir, target_species):
+        """
+        Process targets with 'randomN' in the codon column and valid orthologs.
+        
+        Args:
+            targets_df (pd.DataFrame): Input targets DataFrame
+            reference_dir (str): Directory containing reference files
+            target_species (str): Name of target species
+            
+        Returns:
+            pd.DataFrame: Updated targets DataFrame with random positions
+        """
+        # Create a copy of the input DataFrame
+        result_df = targets_df.copy()
+        
+        # Keep track of rows to remove and add
+        rows_to_remove = []
+        new_rows = []
+        
+        # Iterate through rows where codon contains 'random' AND has a valid ortholog
+        for idx, row in result_df.iterrows():
+            # Check both conditions:
+            # 1. codon contains 'random'
+            # 2. target species column has a valid gene ID (not NaN or empty)
+            if (isinstance(row['codon'], str) and 'random' in str(row['codon']).lower() and 
+                pd.notna(row[target_species]) and str(row[target_species]).strip()):
+                
+                try:
+                    # Extract number of random positions needed
+                    n = int(str(row['codon']).lower().replace('random', ''))
+                except ValueError:
+                    print(f"Warning: Could not parse number from codon value {row['codon']}")
+                    continue
+                
+                # Get GFF path for target species
+                target_gff = os.path.join(reference_dir, f"{target_species}.gff")
+                
+                # Get random positions for the target gene
+                random_positions = get_random_exon_positions(
+                    target_gff, 
+                    row[target_species],  # Use the target gene ID
+                    n
+                )
+                
+                # If we found positions, mark row for removal and create new rows
+                if random_positions:
+                    # Mark original row for removal
+                    rows_to_remove.append(idx)
+                    
+                    # Create new rows for each random position
+                    for i, (contig, start, end, strand) in enumerate(random_positions):
+                        new_row = row.copy()
+                        new_row['target_contig'] = contig
+                        new_row['target_start'] = start
+                        new_row['target_end'] = end
+                        new_row['target_strand'] = strand
+                        new_row['codon'] = f"random{i+1}"
+                        new_rows.append(new_row)
+                else:
+                    print(f"Warning: No exons found for gene {row[target_species]}")
+        
+        # Remove all marked rows at once
+        result_df = result_df.drop(rows_to_remove)
+        
+        # Add all new rows at once
+        if new_rows:
+            result_df = pd.concat([result_df, pd.DataFrame(new_rows)], ignore_index=True)
+        
+        return result_df.sort_values(['contig', 'start'])
 
 
 
