@@ -3,6 +3,7 @@
 from .orthofinder import run_orthofinder
 from .utils import logger, get_tqdm, load_fasta, write_fasta, write_longest_isoforms, create_gene_mapping, get_longest_transcripts, split_one_to_many_orthologs
 from .orthologs import Orthologs
+from .synteny import add_synteny_information, evaluate_synteny
 import logging 
 
 tqdm = get_tqdm()
