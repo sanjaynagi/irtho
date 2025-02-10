@@ -120,7 +120,7 @@ def create_gene_mapping(gff_file):
                 protein_id = attributes.get('protein_source_id')
                 
             # Handle RefSeq format - only process if source is RefSeq
-            elif source == 'RefSeq':
+            else:
                 gene_id = attributes.get('gene')  # LOC ID
                 transcript_id = attributes.get('Parent')
                 if transcript_id and transcript_id.startswith('rna-'):
@@ -128,9 +128,6 @@ def create_gene_mapping(gff_file):
                 protein_id = attributes.get('protein_id')
                 if protein_id and protein_id.startswith('cds-'):
                     protein_id = protein_id[4:]  # Remove 'cds-' prefix
-                    
-            else:
-                continue  # Skip all other sources
                 
             # Skip if any required field is missing
             if not all([gene_id, transcript_id, protein_id]):
@@ -151,9 +148,8 @@ def create_gene_mapping(gff_file):
     # Convert to DataFrame
     df = pd.DataFrame(gene_transcript_protein_map)
     
-    if 'gene_id' in df.columns:
-        # Sort by gene_id to maintain consistent order
-        df = df.sort_values('gene_id')
+    # Sort by gene_id to maintain consistent order
+    df = df.sort_values('gene_id')
     df = df.reset_index(drop=True)
     
     return df
