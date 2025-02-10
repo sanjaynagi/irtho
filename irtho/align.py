@@ -135,8 +135,8 @@ def get_genomic_position_from_codon(codon_num, gff_path, protein_id, gene_map):
         gene_map (pd.DataFrame): Gene mapping DataFrame containing protein_id to transcript_id mappings
         
     Returns:
-        tuple: (chromosome, start, end, strand)
-            - chromosome: The chromosome name
+        tuple: (contigosome, start, end, strand)
+            - contigosome: The contigosome name
             - start: Start position of the codon in genomic coordinates
             - end: End position of the codon in genomic coordinates
             - strand: The strand ('+' or '-')
@@ -166,7 +166,7 @@ def get_genomic_position_from_codon(codon_num, gff_path, protein_id, gene_map):
                     matches = True
                 if matches:
                     cds_regions.append({
-                        'chrom': fields[0],
+                        'contig': fields[0],
                         'start': int(fields[3]),
                         'end': int(fields[4]),
                         'strand': fields[6],
@@ -178,7 +178,7 @@ def get_genomic_position_from_codon(codon_num, gff_path, protein_id, gene_map):
         
     # Sort CDS regions by genomic coordinates
     strand = cds_regions[0]['strand']
-    chrom = cds_regions[0]['chrom']
+    contig = cds_regions[0]['contig']
     
     if strand == '+':
         cds_regions.sort(key=lambda x: x['start'])
@@ -209,7 +209,7 @@ def get_genomic_position_from_codon(codon_num, gff_path, protein_id, gene_map):
                 codon_end = cds['end'] - offset
                 codon_start = codon_end - 2  # -2 because codon is 3 bases
             
-            return (chrom, codon_start, codon_end, strand)
+            return (contig, codon_start, codon_end, strand)
             
         current_pos += cds_length
     
