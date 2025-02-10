@@ -151,8 +151,10 @@ def create_gene_mapping(gff_file):
     # Convert to DataFrame
     df = pd.DataFrame(gene_transcript_protein_map)
     
-    # Sort by gene_id to maintain consistent order
-    df = df.sort_values('gene_id').reset_index(drop=True)
+    if 'gene_id' in df.columns:
+        # Sort by gene_id to maintain consistent order
+        df = df.sort_values('gene_id')
+    df = df.reset_index(drop=True)
     
     return df
     
