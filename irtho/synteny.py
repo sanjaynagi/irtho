@@ -5,7 +5,7 @@ from .utils import get_tqdm
 
 tqdm = get_tqdm()
 
-def evaluate_synteny(ref_gene, target_gene, ref_gff, target_gff, orthologs_df, target_species, window_size=5, n_required_orthologs=3):
+def evaluate_synteny(ref_gene, target_gene, ref_genes_df, target_genes_df, orthologs_df, target_species, window_size=5, n_required_orthologs=3):
     """
     Evaluate if two genes are in syntenic regions by checking orthology of neighboring genes.
     
@@ -24,22 +24,6 @@ def evaluate_synteny(ref_gene, target_gene, ref_gff, target_gff, orthologs_df, t
             - is_syntenic: Boolean indicating if region is syntenic
             - shared_orthologs: Number of shared orthologous pairs in window
     """
-    import allel
-    
-    # Load and process GFFs
-    ref_gff_df = allel.gff3_to_dataframe(ref_gff, attributes=['ID']).sort_values(['seqid', 'start'])
-    target_gff_df = allel.gff3_to_dataframe(target_gff, attributes=['ID']).sort_values(['seqid', 'start'])
-    
-    # Filter GFFs based on source
-    if 'RefSeq' in ref_gff_df['source'].unique():
-        ref_genes_df = ref_gff_df.query("type == 'gene' and source == 'RefSeq'")
-    else:
-        ref_genes_df = ref_gff_df.query("type == 'protein_coding_gene'")
-        
-    if 'RefSeq' in target_gff_df['source'].unique():
-        target_genes_df = target_gff_df.query("type == 'gene' and source == 'RefSeq'")
-    else:
-        target_genes_df = target_gff_df.query("type == 'protein_coding_gene'")
     
     # Get chromosome and position for reference gene
     ref_row = ref_genes_df[ref_genes_df['ID'] == ref_gene]
@@ -111,6 +95,22 @@ def add_synteny_information(targets_df, reference_dir, reference_species, target
     # Get paths to GFF files
     ref_gff = os.path.join(reference_dir, f"{reference_species}.gff")
     target_gff = os.path.join(reference_dir, f"{target_species}.gff")
+
+    # Load and process GFFs
+    import allel
+    ref_gff_df = allel.gff3_to_dataframe(ref_gff, attributes=['ID']).sort_values(['seqid', 'start'])
+    target_gff_df = allel.gff3_to_dataframe(target_gff, attributes=['ID']).sort_values(['seqid', 'start'])
+
+    # Filter GFFs based on source
+    if 'RefSeq' in ref_gff_df['source'].unique():
+        ref_genes_df = ref_gff_df.query("type == 'gene' and source == 'RefSeq'")
+    else:
+        ref_genes_df = ref_gff_df.query("type == 'protein_coding_gene'")
+        
+    if 'RefSeq' in target_gff_df['source'].unique():
+        target_genes_df = target_gff_df.query("type == 'gene' and source == 'RefSeq'")
+    else:
+        target_genes_df = target_gff_df.query("type == 'protein_coding_gene'")
     
     # Get orthologs DataFrame
     orthologs_df = ortho_obj.get_orthologs(reference_species, target_species)
@@ -121,8 +121,8 @@ def add_synteny_information(targets_df, reference_dir, reference_species, target
             is_syntenic, shared_count = evaluate_synteny(
                 ref_gene=row['gene'],
                 target_gene=row[target_species],
-                ref_gff=ref_gff,
-                target_gff=target_gff,
+                ref_genes_df=ref_genes_df,
+                target_genes_df=target_genes_df,
                 orthologs_df=orthologs_df,
                 target_species=target_species
             )
