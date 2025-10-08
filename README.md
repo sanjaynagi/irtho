@@ -1,5 +1,11 @@
 # Irtho
 
+<div align="center">
+
+[<img src="https://raw.githubusercontent.com/sanjaynagi/irtho/main/irtho.png" width="400"/>](https://raw.githubusercontent.com/sanjaynagi/irtho/main/irtho.png)   
+
+</div>
+
 ## Overview
 
 **IRTHO** is a python package to find orthologous loci between reference genomes, based on OrthoFinder.
